@@ -1,3 +1,4 @@
+# Tests for price-source response parsing, with all HTTP calls mocked.
 import pytest
 
 from app.price_sources.coingecko import COINGECKO_API_URL, CoinGeckoPriceSource

@@ -1,3 +1,4 @@
+# Lint, test, and Docker-build gate: runs on every PR and push.
 name: CI
 
 on:

@@ -1,3 +1,4 @@
+# Tests for subscription persistence (CRUD, chat-scoping, trigger state).
 import pytest
 
 from app.models import (

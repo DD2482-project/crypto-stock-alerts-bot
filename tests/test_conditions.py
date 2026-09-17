@@ -1,3 +1,4 @@
+# Tests for pure alert-condition evaluation logic.
 from app.conditions import is_triggered
 from app.models import ConditionType
 

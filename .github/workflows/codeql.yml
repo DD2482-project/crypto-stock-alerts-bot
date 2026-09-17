@@ -1,3 +1,4 @@
+# Static analysis: CodeQL on PRs to main and on a weekly schedule.
 name: CodeQL
 
 on:
