@@ -1,0 +1,1 @@
+# TODO(gabriel): build+push to GHCR, Trivy scan, deploy on merge to main.
