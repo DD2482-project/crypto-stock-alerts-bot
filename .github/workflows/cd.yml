@@ -74,6 +74,13 @@ jobs:
             cd /opt/app
             git pull --ff-only
 
+            # GHCR packages are private by default, so the host must
+            # authenticate before it can pull. GITHUB_TOKEN is scoped to
+            # this workflow run and expires with it, so no long-lived
+            # credential is stored on the host.
+            echo "${{ secrets.GITHUB_TOKEN }}" \
+              | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
             cat > .env <<ENV
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             CRYPTO_API_KEY=${{ secrets.CRYPTO_API_KEY }}
