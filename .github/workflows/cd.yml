@@ -1,1 +1,104 @@
-# TODO(gabriel): build+push to GHCR, Trivy scan, deploy on merge to main.
+# Build + push to GHCR, scan the image, and deploy to the Terraform-
+# provisioned host on every merge to main.
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write        # push image to GHCR
+  security-events: write # upload Trivy results to the Security tab
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        run: |
+          docker build \
+            -t "$REGISTRY/$IMAGE_NAME:${{ github.sha }}" \
+            -t "$REGISTRY/$IMAGE_NAME:latest" \
+            .
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          # Report-only for this project's scope: fail the build would be
+          # stricter, but a single unpatched base-image CVE would then
+          # block every deploy until upstream ships a fix. Documented as a
+          # trade-off in the report rather than silently ignored.
+          exit-code: "0"
+
+      - name: Upload Trivy results to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Push image
+        run: |
+          docker push "$REGISTRY/$IMAGE_NAME:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE_NAME:latest"
+
+  deploy:
+    needs: build-scan-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to host over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/app
+            git pull --ff-only
+
+            cat > .env <<ENV
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            CRYPTO_API_KEY=${{ secrets.CRYPTO_API_KEY }}
+            STOCK_API_KEY=${{ secrets.STOCK_API_KEY }}
+            POLL_INTERVAL_SECONDS=60
+            ENV
+
+            export IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
+
+      - name: Smoke test — container running + bot token reachable
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/app
+            # Fails the job if the bot container isn't Up.
+            docker compose ps --status running | grep -q bot
+            # getMe confirms Telegram accepts the bot token; it can't
+            # confirm *this* deployment is polling, only that the
+            # credentials are valid -- a real /subscribe round-trip is
+            # verified manually per the project's Definition of Done.
+            curl -sf "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe" > /dev/null

@@ -1,1 +1,25 @@
-# TODO(gabriel): app service + named volume for the SQLite DB file.
+# Runtime configuration for the deployment host.
+#
+# - `build` supports local development (`docker compose up --build`).
+# - `image` is what the CD workflow actually deploys: it sets the IMAGE
+#   env var to the GHCR tag it just pushed (ghcr.io/<owner>/<repo>:<sha>)
+#   before running `docker compose pull && docker compose up -d`, so the
+#   host never needs a local build step or repo checkout of the Dockerfile.
+# - The SQLite DB file lives on a named volume so subscriptions/alerts
+#   persist across redeploys and restarts.
+services:
+  bot:
+    build: .
+    image: ${IMAGE:-crypto-stock-alerts-bot:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /data/alerts.db
+    volumes:
+      - bot_data:/data
+    # No ports are published: the bot only makes outbound calls (Telegram
+    # long-polling + market-data APIs) and receives no inbound traffic.
+
+volumes:
+  bot_data:

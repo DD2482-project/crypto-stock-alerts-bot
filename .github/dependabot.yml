@@ -1,1 +1,14 @@
-# TODO(gabriel): weekly updates for pip and github-actions ecosystems.
+# Weekly dependency update checks for both ecosystems in this repo.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
