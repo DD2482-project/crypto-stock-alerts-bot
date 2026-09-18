@@ -11,3 +11,4 @@ output "ssh_key_id" {
   description = "Hetzner Cloud ID of the SSH key installed on the host."
   value       = hcloud_ssh_key.deploy.id
 }
+    
