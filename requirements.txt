@@ -1,5 +1,5 @@
 # Runtime dependencies.
-python-telegram-bot==21.6
+python-telegram-bot==22.8
 APScheduler==3.10.4
 SQLAlchemy==2.0.35
 requests==2.32.3
