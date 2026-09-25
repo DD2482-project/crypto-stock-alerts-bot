@@ -88,6 +88,13 @@ builds and scans the Docker image, pushes it to GHCR, and deploys it over
 SSH to the Terraform-provisioned host. See `docs/report.md` for the full
 CI/CD and infrastructure design, and `infra/terraform/` for the OCI setup.
 
+**Note for graders:** the live host runs on an Oracle Cloud (OCI) trial
+account, which is time-limited (roughly 20–30 days). If the deployed bot or
+a `terraform plan`/`apply` against it no longer works by the time this is
+reviewed, that's the trial expiring, not a bug in the pipeline itself. The
+CI/CD workflows, tests, and Terraform config remain fully runnable against
+a fresh OCI account.
+
 ## Team
 
 - Jafar — Application & Continuous Integration, including the `main` branch

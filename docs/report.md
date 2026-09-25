@@ -63,6 +63,7 @@ We chose OCI because its Always Free resources are enough for a small student wo
 The `VM.Standard.E2.1.Micro` shape we picked is x86_64, matching the Docker images the GitHub-hosted Ubuntu runners produce, so we didn't need to introduce multi-architecture image builds. Its CPU and memory are limited, which is fine for one lightweight polling process but wouldn't be enough for a larger service or a database server.
 We keep Terraform state locally rather than in a remote backend. That's a reasonable simplification for a two-person, single-environment course project, though a team or production setup would normally use remote state with locking and controlled access.
 One configuration detail has to stay consistent with the repository: the Terraform `github_repository` variable used by cloud-init must resolve to `DD2482-project/crypto-stock-alerts-bot`, not an older fork, or cloud-init clones the wrong repository on first boot.
+The host itself runs on an OCI trial account, which is time-limited (see `README.md`); if it's no longer reachable when this is reviewed, the pipeline and Terraform config are still fully runnable against a fresh account.
 
 ## 5. Quality, Security, and AI-Assisted Tools
 
