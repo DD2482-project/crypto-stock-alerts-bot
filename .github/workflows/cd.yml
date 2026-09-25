@@ -18,7 +18,7 @@ jobs:
       # Passed to the deploy job so both jobs agree on exactly one tag.
       image: ${{ steps.meta.outputs.image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Container registries reject tags containing uppercase characters,
       # and this repository lives under an organisation whose name has
