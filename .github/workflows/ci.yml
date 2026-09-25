@@ -36,3 +36,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t crypto-stock-alerts-bot:ci .
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for committed secrets (gitleaks)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --config /repo/.gitleaks.toml --no-git -v --redact

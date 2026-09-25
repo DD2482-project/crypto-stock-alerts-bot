@@ -81,5 +81,5 @@ variable "ssh_allowed_cidr" {
 variable "github_repository" {
   description = "owner/repo of this project on GitHub. Used by cloud-init to git-clone the repo (for docker-compose.yml) onto the host at first boot. The repo is assumed public; a private repo would need a deploy token in the clone URL."
   type        = string
-  default     = "sund02/crypto-stock-alerts-bot"
+  default     = "DD2482-project/crypto-stock-alerts-bot"
 }
