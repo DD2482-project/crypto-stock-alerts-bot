@@ -11,53 +11,65 @@ permissions:
   packages: write        # push image to GHCR
   security-events: write # upload Trivy results to the Security tab
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build-scan-push:
     runs-on: ubuntu-latest
+    outputs:
+      # Passed to the deploy job so both jobs agree on exactly one tag.
+      image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+
+      # Container registries reject tags containing uppercase characters,
+      # and this repository lives under an organisation whose name has
+      # them (DD2482-project). github.repository therefore cannot be used
+      # verbatim -- it is lowercased here once and reused everywhere.
+      - name: Compute lowercase image name
+        id: meta
+        run: |
+          image="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build image
         run: |
           docker build \
-            -t "$REGISTRY/$IMAGE_NAME:${{ github.sha }}" \
-            -t "$REGISTRY/$IMAGE_NAME:latest" \
+            -t "${{ steps.meta.outputs.image }}:${{ github.sha }}" \
+            -t "${{ steps.meta.outputs.image }}:latest" \
             .
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          image-ref: "${{ steps.meta.outputs.image }}:${{ github.sha }}"
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          # Report-only for this project's scope: fail the build would be
-          # stricter, but a single unpatched base-image CVE would then
+          # Report-only for this project's scope: failing the build would
+          # be stricter, but a single unpatched base-image CVE would then
           # block every deploy until upstream ships a fix. Documented as a
           # trade-off in the report rather than silently ignored.
           exit-code: "0"
 
       - name: Upload Trivy results to the Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        # Runs even when an earlier step failed, so partial scan results
+        # are still visible -- but only when the file actually exists, so
+        # a failure here never masks the real error further up the job.
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
 
       - name: Push image
         run: |
-          docker push "$REGISTRY/$IMAGE_NAME:${{ github.sha }}"
-          docker push "$REGISTRY/$IMAGE_NAME:latest"
+          docker push "${{ steps.meta.outputs.image }}:${{ github.sha }}"
+          docker push "${{ steps.meta.outputs.image }}:latest"
 
   deploy:
     needs: build-scan-push
@@ -72,7 +84,14 @@ jobs:
           script: |
             set -e
             cd /opt/app
-            git pull --ff-only
+
+            # Force the host to exactly match main rather than pulling the
+            # branch it happens to be on -- makes the deploy reproducible
+            # regardless of what state a previous run left behind. The
+            # untracked .env written below is not touched by reset.
+            git fetch origin
+            git checkout -B main origin/main
+            git reset --hard origin/main
 
             # GHCR packages are private by default, so the host must
             # authenticate before it can pull. GITHUB_TOKEN is scoped to
@@ -88,7 +107,7 @@ jobs:
             POLL_INTERVAL_SECONDS=60
             ENV
 
-            export IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+            export IMAGE="${{ needs.build-scan-push.outputs.image }}:${{ github.sha }}"
             docker compose pull
             docker compose up -d
             docker image prune -f
