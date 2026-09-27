@@ -10,9 +10,11 @@ report rather than adding a fourth required argument.
 
 from __future__ import annotations
 
+import html
 import logging
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from app.models import (
@@ -27,12 +29,28 @@ from app.price_sources import get_price_source
 
 logger = logging.getLogger(__name__)
 
+# Rendered with ParseMode.HTML. Placeholders are written in caps rather
+# than angle brackets (<symbol>) because Telegram would either strip them
+# as markup or display them as literal tags, neither of which reads well.
 USAGE = (
-    "Usage:\n"
-    "/subscribe <symbol> <price|pct> <value> - e.g. /subscribe bitcoin price 70000\n"
-    "/list - show your subscriptions\n"
-    "/unsubscribe <id> - remove a subscription"
+    "<b>Commands</b>\n\n"
+    "<code>/subscribe SYMBOL price VALUE</code>\n"
+    "Alert me when the price crosses VALUE.\n"
+    "<i>Example:</i> <code>/subscribe bitcoin price 70000</code>\n\n"
+    "<code>/subscribe SYMBOL pct VALUE</code>\n"
+    "Alert me on a VALUE% move from the current price.\n"
+    "<i>Example:</i> <code>/subscribe ethereum pct 5</code>\n\n"
+    "<code>/list</code> — show your subscriptions\n"
+    "<code>/unsubscribe ID</code> — remove one\n\n"
+    "<i>Crypto uses CoinGecko ids (bitcoin, ethereum); "
+    "stocks use tickers (AAPL, TSLA).</i>"
 )
+
+WELCOME = (
+    "📈 <b>Crypto &amp; Stock Alerts</b>\n\n"
+    "I watch prices for you and send a message the moment your "
+    "target is reached.\n\n"
+) + USAGE
 
 
 def _resolve_price(context: ContextTypes.DEFAULT_TYPE, symbol: str) -> tuple[AssetType, float]:
@@ -51,29 +69,35 @@ def _resolve_price(context: ContextTypes.DEFAULT_TYPE, symbol: str) -> tuple[Ass
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Welcome! I'll notify you about price alerts.\n" + USAGE)
+    await update.message.reply_text(WELCOME, parse_mode=ParseMode.HTML)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(USAGE)
+    await update.message.reply_text(USAGE, parse_mode=ParseMode.HTML)
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args or []
     if len(args) != 3:
-        await update.message.reply_text(USAGE)
+        await update.message.reply_text(USAGE, parse_mode=ParseMode.HTML)
         return
 
     symbol, condition_str, value_str = args
     condition_str = condition_str.lower()
     if condition_str not in ("price", "pct"):
-        await update.message.reply_text(f"Unknown condition type '{condition_str}'.\n" + USAGE)
+        await update.message.reply_text(
+            f"⚠️ Unknown condition type <b>{html.escape(condition_str)}</b>.\n\n" + USAGE,
+            parse_mode=ParseMode.HTML,
+        )
         return
 
     try:
         target_value = float(value_str)
     except ValueError:
-        await update.message.reply_text(f"'{value_str}' is not a number.\n" + USAGE)
+        await update.message.reply_text(
+            f"⚠️ <b>{html.escape(value_str)}</b> is not a number.\n\n" + USAGE,
+            parse_mode=ParseMode.HTML,
+        )
         return
 
     condition_type = ConditionType.PRICE if condition_str == "price" else ConditionType.PERCENT
@@ -128,7 +152,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args or []
     if len(args) != 1:
-        await update.message.reply_text("Usage: /unsubscribe <id>")
+        await update.message.reply_text(
+            "Usage: <code>/unsubscribe ID</code>", parse_mode=ParseMode.HTML
+        )
         return
 
     try:
