@@ -2,7 +2,7 @@
 
 ## 1. Project and Architecture
 
-We kept the application itself small on purpose: the point of this project is to demonstrate an integrated DevOps workflow, not to build a large system. What we built is a single-process Telegram bot that lets users create price alerts for cryptocurrencies and stocks. The repository holds the application, its tests, the container configuration, the CI/CD workflows, the Infrastructure as Code, and the project documentation, so the whole workflow lives in one GitHub repository.
+What we built is a Telegram bot that lets users create price alerts for cryptocurrencies and stocks: a background scheduler polls market prices and notifies users the moment their target is hit. We scoped the application itself deliberately so we could put the engineering effort into the DevOps workflow around it, CI, CD, Infrastructure as Code, and automated quality and security checks, which is what this course project actually grades. The repository holds the application, its tests, the container configuration, the CI/CD workflows, the Infrastructure as Code, and the project documentation, so the whole workflow lives in one GitHub repository.
 We split the application into independent modules:
 
 ```
@@ -63,6 +63,7 @@ We chose OCI because its Always Free resources are enough for a small student wo
 The `VM.Standard.E2.1.Micro` shape we picked is x86_64, matching the Docker images the GitHub-hosted Ubuntu runners produce, so we didn't need to introduce multi-architecture image builds. Its CPU and memory are limited, which is fine for one lightweight polling process but wouldn't be enough for a larger service or a database server.
 We keep Terraform state locally rather than in a remote backend. That's a reasonable simplification for a two-person, single-environment course project, though a team or production setup would normally use remote state with locking and controlled access.
 One configuration detail has to stay consistent with the repository: the Terraform `github_repository` variable used by cloud-init must resolve to `DD2482-project/crypto-stock-alerts-bot`, not an older fork, or cloud-init clones the wrong repository on first boot.
+The host itself runs on an OCI trial account, which is time-limited (see `README.md`); if it's no longer reachable when this is reviewed, the pipeline and Terraform config are still fully runnable against a fresh account.
 
 ## 5. Quality, Security, and AI-Assisted Tools
 
@@ -71,12 +72,14 @@ We also used AI-assisted tools during the project as development support: fixing
 
 ## 6. Limitations and Trade-offs
 
-We think the result is a complete, working DevOps pipeline for what this course project asks for, not a partial one: every mandatory piece, CI, CD, Infrastructure as Code, a development platform with enforced branch rules, and several layers of quality and security automation, is implemented, wired together, and actually running in this repository, not just described in this report. What follows are the limitations and trade-offs we made along the way, and why we made them.
+We think the result is a complete, working DevOps pipeline for what this course project asks for. Every mandatory piece, CI, CD, Infrastructure as Code, a development platform with enforced branch rules, and several layers of quality and security automation, is implemented, wired together, and running in this repository. What follows are the limitations and trade-offs we made along the way, and why we made them.
 
-Several of these were scoping decisions, not oversights. The Trivy scan's report-only mode (§3) is one of them: we picked visibility over blocking every deploy on a CVE we can't fix ourselves. SSH is allowed from `0.0.0.0/0` because GitHub-hosted runners deploy from a large, changing IP range; the SSH key is still required to do anything, but a production setup should narrow this to a bastion, VPN, or self-hosted runner.
+Several of these were scoping decisions, not oversights. The Trivy scan's report-only mode (section 3) is one of them: we picked visibility over blocking every deploy on a CVE we can't fix ourselves. SSH is allowed from `0.0.0.0/0` because GitHub-hosted runners deploy from a large, changing IP range; the SSH key is still required to do anything, but a production setup should narrow this to a bastion, VPN, or self-hosted runner.
 
 At the application level, SQLite has no replication or automated backup. That's acceptable for a single bot instance, but it's the first thing we'd change before running more than one. The in-process scheduler makes the same single-instance assumption: running two replicas would double-process the same subscriptions, since there's no distributed locking. The stock price source is also bounded by Alpha Vantage's free-tier rate limit, and crypto lookups currently rely on CoinGecko's internal coin ids rather than a friendlier ticker-resolution layer. Both are things we'd build out first if this were a real product instead of a course project.
 
-We also caught and fixed a real issue while building this, not just a hypothetical one: the `secret-scan` job initially failed in CI on a false positive in `.env.example` (Gitleaks flagged the bare `STOCK_API_KEY=` placeholder as a possible secret). We fixed it with a scoped `.gitleaks.toml` allowlist for that one file rather than by weakening or disabling the check for everything else. It's a small example, but it shows the pipeline doing its job during development, not just existing on paper.
+We also ran into a real issue while building this: the `secret-scan` job initially failed in CI on a false positive in `.env.example` (Gitleaks flagged the bare `STOCK_API_KEY=` placeholder as a possible secret). We fixed it with a scoped `.gitleaks.toml` allowlist for that one file rather than by weakening or disabling the check for everything else. It's a small example, but it shows the pipeline doing its job during development.
 
-None of this touches the mandatory pieces: the pipeline described in sections 2 through 5 is fully wired together and running in this repository, not just documented in this report. Everything needed to reproduce it, the application code, tests, `Dockerfile`, `docker-compose.yml`, the CI/CD workflows, the Terraform configuration, and the setup instructions in `README.md`, is in this one place.
+Reproducing the whole setup needs nothing beyond what's already in this repository: the application code, tests, `Dockerfile`, `docker-compose.yml`, the CI/CD workflows, the Terraform configuration, and the setup instructions in `README.md`.
+
+The bot is also live for anyone who wants to try it themselves. See the "Try It Live" section in `README.md` for the link, example commands, and screenshots.
