@@ -31,6 +31,24 @@ quality/security automation). See `docs/report.md` for details.
 - `/list` — show your subscriptions and their status
 - `/unsubscribe <id>` — remove a subscription by its id
 
+## Try It Live
+
+The bot is deployed and running at
+[https://t.me/Kth_crypto_bot](https://t.me/Kth_crypto_bot) (see the note
+under [Deployment](#deployment) about the OCI trial's time limit). Open the
+link and try any of the commands above, e.g. `/subscribe bitcoin price 70000`
+or `/list`.
+
+![The bot's /start reply listing available commands](docs/images/subscribe-help.png)
+
+**Figure 1.** The bot's `/start` reply, showing command syntax and examples.
+
+![Subscribing to a bitcoin price alert, /list showing it as active, and the alert firing once the price crosses the target](docs/images/subscribe-alert-triggered.png)
+
+**Figure 2.** `/subscribe bitcoin price 85400` confirms the subscription,
+`/list` shows it as `active`, and once BITCOIN's price crossed 85400 the bot
+sent the alert automatically and marked it triggered.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in real values:
