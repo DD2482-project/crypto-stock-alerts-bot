@@ -21,4 +21,8 @@ repository, CI results, and GitHub settings before being kept.
 
 ## Gabriel
 
-_TODO(gabriel): fill in as work progresses._
+The delivery pipeline, infrastructure and security automation are my half of the project. I used AI assistance  mainly for first drafts and unfamiliar configuration, then reviewed and tested everything myself. It was used to:
+
+- Draft initial versions of the Dockerfile, docker-compose.yml, the Terraform configuration and the CD workflow, which I then ran and corrected against what the deployment actually needed.
+- Explain configuration I had not used before (OCI networking, cloud-init, GitHub Actions outputs and secrets) instead of copying it blind.
+- Help debug real CD failures diagnosed from the Actions logs: an unresolvable trivy-action version, an image tag rejected for uppercase letters in our organisation name, and a host checked out on the wrong branch

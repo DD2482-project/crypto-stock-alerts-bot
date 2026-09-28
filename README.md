@@ -119,4 +119,8 @@ a fresh OCI account.
   ruleset (required PR + 1 approving review + required `lint`/`test`/`docker-build`
   status checks, no force-push/delete) that turns CI into an enforced merge gate.
   Also wrote `docs/report.md`, covering both members' work.
-- Gabriel — Delivery, Infrastructure & Security
+- Gabriel — Delivery, Infrastructure & Security: multi-stage non-root
+  `Dockerfile` and Compose runtime, the `cd.yml` build → scan → push →
+  deploy → smoke-test pipeline, the Terraform configuration provisioning
+  the OCI host and its firewall, and the Trivy/Dependabot/secrets
+  automation.
