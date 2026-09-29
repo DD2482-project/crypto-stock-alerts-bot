@@ -6,7 +6,7 @@ when their target price or percentage-change threshold is met.
 
 The bot itself is intentionally simple — the primary deliverable of this
 project is the DevOps pipeline around it (CI, CD, Infrastructure as Code, and
-quality/security automation). See `docs/report.md` for details.
+quality/security automation). See `docs/report.tex` for details.
 
 ## Repository layout
 
@@ -110,7 +110,7 @@ required checks once GitHub has seen it run. Force-pushes and deletions of
 
 Once CI passes on `main`, the CD workflow (`.github/workflows/cd.yml`)
 builds and scans the Docker image, pushes it to GHCR, and deploys it over
-SSH to the Terraform-provisioned host. See `docs/report.md` for the full
+SSH to the Terraform-provisioned host. See `docs/report.tex` for the full
 CI/CD and infrastructure design.
 
 ### Setting it up from scratch
@@ -167,7 +167,7 @@ a fresh OCI account.
 - Jafar — Application & Continuous Integration, including the `main` branch
   ruleset (required PR + 1 approving review + required `lint`/`test`/`docker-build`
   status checks, no force-push/delete) that turns CI into an enforced merge gate.
-  Also wrote `docs/report.md`, covering both members' work.
+  Also wrote `docs/report.tex`, covering both members' work.
 - Gabriel — Delivery, Infrastructure & Security: multi-stage non-root
   `Dockerfile` and Compose runtime, the `cd.yml` build → scan → push →
   deploy → smoke-test pipeline, the Terraform configuration provisioning
