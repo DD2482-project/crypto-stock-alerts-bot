@@ -2,7 +2,7 @@
 
 ## 1. Project and Architecture
 
-What we built is a Telegram bot that lets users create price alerts for cryptocurrencies and stocks: a background scheduler polls market prices and notifies users the moment their target is hit. We scoped the application itself deliberately so we could put the engineering effort into the DevOps workflow around it, CI, CD, Infrastructure as Code, and automated quality and security checks, which is what this course project actually grades. The repository holds the application, its tests, the container configuration, the CI/CD workflows, the Infrastructure as Code, and the project documentation, so the whole workflow lives in one GitHub repository.
+What we built is a Telegram bot that lets users create price alerts for cryptocurrencies and stocks: a background scheduler polls market prices and notifies users the moment their target is hit. We scoped the application itself deliberately so we could put the engineering effort into the DevOps workflow around it, CI, CD, Infrastructure as Code, and automated quality and security checks, which is what this course project grades. The repository holds the application, its tests, the container configuration, the CI/CD workflows, the Infrastructure as Code, and the project documentation, so the whole workflow lives in one GitHub repository.
 We split the application into independent modules:
 
 ```
@@ -32,28 +32,29 @@ We chose this separation because it keeps external I/O at clear boundaries and m
 
 We used GitHub as our development platform: source control, pull requests, branch rules, GitHub Actions, security results, and GitHub Container Registry (GHCR) all live there. We work on feature branches and integrate changes through pull requests into `main`.
 The `main` branch is protected by an active ruleset. Direct integration into `main` requires a pull request, at least one approving review, and successful required CI status checks. The configured CI checks are `lint`, `test`, and `docker-build`. Force pushes and deletion of `main` are blocked and the bypass list is empty. This means a change cannot be merged simply because it compiles locally or because one person wrote it: it needs both a second pair of eyes and a passing automated gate.
-The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull request and contains four independent jobs:
+The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull request and contains five independent jobs:
 
 - **`lint`** runs `ruff check .`. We picked Ruff because one tool covers common Python style, correctness, import-order, modernization, and bug-detection rules, instead of wiring up several separate linters.
-- **`test`** runs `pytest --cov=app --cov-report=term-missing`. The tests cover the trigger logic, persistence layer, and price-source behavior. External HTTP calls are mocked so CI does not depend on third-party API availability or rate limits.
+- **`test`** runs `pytest --cov=app --cov-report=term-missing`. The tests cover the trigger logic, persistence layer, and price-source behavior. External HTTP calls are mocked here so this job never depends on third-party API availability or rate limits. The job also fails if coverage drops below 40%, a floor set just under the current figure, so any drop gets caught.
+- **`integration-test`** runs `tests/test_telegram_integration.py` against the real Telegram Bot API instead of a mock, checking that a valid token is accepted and an invalid one is rejected. That catches a revoked token or an API-shape change that mocking can't. Without the `TELEGRAM_BOT_TOKEN` secret, as on a fork's pull request, the tests skip. The job is marked `continue-on-error` and isn't a required check, so a Telegram outage never blocks a merge or a deploy.
 - **`docker-build`** builds the production Docker image. This catches broken Dockerfiles, missing dependencies, or packaging problems before a change can be merged.
-- **`secret-scan`** runs Gitleaks against the checked-out repository to catch committed secrets (API keys, tokens, private keys) before they can reach `main`. It fails the job (rather than only logging a report) when it finds a match, so once added to the `main` ruleset's required checks it blocks the merge instead of just warning about it. `.gitleaks.toml` extends the default ruleset and allowlists `.env.example` by path, since its intentionally empty `KEY=` placeholders otherwise trip the generic-api-key rule as a false positive; every other file is still scanned against the full default rule set.
+- **`secret-scan`** runs Gitleaks (pinned to v8.30.1, so CI only picks up a new version when we bump it) against the checked-out repository to catch committed secrets (API keys, tokens, private keys) before they can reach `main`. It fails the job (rather than only logging a report) when it finds a match, so once added to the `main` ruleset's required checks it blocks the merge instead of just warning about it. `.gitleaks.toml` extends the default ruleset and allowlists `.env.example` by path, since its intentionally empty `KEY=` placeholders otherwise trip the generic-api-key rule as a false positive; every other file is still scanned against the full default rule set.
 
 We also run CodeQL as an additional, security-focused workflow. It analyzes Python pull requests targeting `main` and also runs weekly on a schedule, looking for security-relevant code patterns that linting and unit tests don't catch.
 Put together, the integration path looks like this:
 
 ```
-feature branch → pull request → lint + tests + Docker build + CodeQL
-              → one human approval → merge to protected main → CD
+feature branch → pull request → lint + tests + Docker build + secret scan + CodeQL
+              → one human approval → merge to protected main → CI passes on main → CD
 ```
 
 The branch rules turn CI from an advisory tool into an enforced quality gate.
 
 ## 3. Continuous Delivery and Containerization
 
-Our CD workflow (`.github/workflows/cd.yml`) runs whenever changes reach `main`. Its first job builds the production Docker image and tags it with both the Git commit SHA and `latest`. The SHA tag gives us traceability between a deployed image and the exact source revision that produced it.
-Before publishing the image, Trivy scans it for `HIGH` and `CRITICAL` vulnerabilities and uploads the SARIF result to GitHub's Security interface. We made the scan intentionally report-only (`exit-code: 0`): we chose visibility over automatically blocking every deployment, because an unpatched vulnerability in an upstream base image could otherwise stop all releases until someone else fixes it. That's a limitation we're stating on purpose rather than hiding; a stricter production system could block deployment for selected severity levels or approved vulnerability policies instead.
-After scanning, the image is pushed to GHCR. The deployment job then connects to the provisioned host over SSH, creates the runtime `.env` file from GitHub Actions secrets, authenticates to GHCR using the workflow's short-lived `GITHUB_TOKEN`, pulls the image for the current commit, and starts it with Docker Compose. The workflow finishes with a smoke test that checks the bot container is running and that the configured Telegram token is accepted by Telegram's `getMe` endpoint.
+Our CD workflow (`.github/workflows/cd.yml`) starts only after CI has passed on `main`, and it builds and deploys the commit CI tested. Deploys run one at a time, so two quick merges can't race on the host. Its first job builds the production Docker image and tags it with both the Git commit SHA and `latest`. The SHA tag gives us traceability between a deployed image and the exact source revision that produced it.
+Before publishing the image, Trivy scans it for `HIGH` and `CRITICAL` vulnerabilities and uploads the SARIF result to GitHub's Security interface. A second Trivy pass then blocks the deploy, but only for `CRITICAL` vulnerabilities that already have a fix. Blocking on every finding would let one unpatched CVE in an upstream base image stop all releases until someone else fixed it; this way we still stop anything we can fix ourselves by updating a dependency.
+After scanning, the image is pushed to GHCR. The deployment job then connects to the provisioned host over SSH, creates the runtime `.env` file from GitHub Actions secrets, authenticates to GHCR using the workflow's short-lived `GITHUB_TOKEN`, pulls the image for the tested commit, and starts it with Docker Compose. The workflow finishes with a smoke test that checks the bot container is running and that the configured Telegram token is accepted by Telegram's `getMe` endpoint.
 The Dockerfile uses a two-stage build and runs the final application as a dedicated non-root user. Docker Compose publishes no inbound application ports, since the bot uses Telegram long-polling and only makes outbound connections. SQLite data lives on a named volume so subscriptions survive container replacement and redeployment.
 
 ## 4. Infrastructure as Code
@@ -74,7 +75,7 @@ We also used AI-assisted tools during the project as development support: fixing
 
 We think the result is a complete, working DevOps pipeline for what this course project asks for. Every mandatory piece, CI, CD, Infrastructure as Code, a development platform with enforced branch rules, and several layers of quality and security automation, is implemented, wired together, and running in this repository. What follows are the limitations and trade-offs we made along the way, and why we made them.
 
-Several of these were scoping decisions, not oversights. The Trivy scan's report-only mode (section 3) is one of them: we picked visibility over blocking every deploy on a CVE we can't fix ourselves. SSH is allowed from `0.0.0.0/0` because GitHub-hosted runners deploy from a large, changing IP range; the SSH key is still required to do anything, but a production setup should narrow this to a bastion, VPN, or self-hosted runner.
+Several of these were scoping decisions, not oversights. The Trivy gate (section 3) is one of them: it blocks only fixable `CRITICAL` vulnerabilities, so `HIGH` findings and unpatched CVEs still ship and are only reported. SSH is allowed from `0.0.0.0/0` because GitHub-hosted runners deploy from a large, changing IP range; the SSH key is still required to do anything, but a production setup should narrow this to a bastion, VPN, or self-hosted runner.
 
 At the application level, SQLite has no replication or automated backup. That's acceptable for a single bot instance, but it's the first thing we'd change before running more than one. The in-process scheduler makes the same single-instance assumption: running two replicas would double-process the same subscriptions, since there's no distributed locking. The stock price source is also bounded by Alpha Vantage's free-tier rate limit, and crypto lookups currently rely on CoinGecko's internal coin ids rather than a friendlier ticker-resolution layer. Both are things we'd build out first if this were a real product instead of a course project.
 
