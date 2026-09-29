@@ -6,13 +6,13 @@ when their target price or percentage-change threshold is met.
 
 The bot itself is intentionally simple — the primary deliverable of this
 project is the DevOps pipeline around it (CI, CD, Infrastructure as Code, and
-quality/security automation). See `docs/report.md` for details.
+quality/security automation). See `docs/report.tex` for details.
 
 ## Repository layout
 
 - `app/` — application source (Telegram handlers, scheduler, price sources,
   persistence, config, entrypoint)
-- `tests/` — unit tests (pytest)
+- `tests/` — unit tests plus a live Telegram API integration test (pytest)
 - `infra/terraform/` — infrastructure as code for the deployment host
 - `.github/workflows/` — CI (`ci.yml`), CD (`cd.yml`), static analysis
   (`codeql.yml`)
@@ -76,8 +76,15 @@ Run the checks the CI pipeline runs before opening a PR:
 
 ```bash
 ruff check .
-pytest --cov=app --cov-report=term-missing
+pytest --cov=app --cov-report=term-missing --cov-fail-under=40
 docker build -t crypto-stock-alerts-bot:ci .
+```
+
+The Telegram integration test skips unless a bot token is set. To run it
+against the real API:
+
+```bash
+TELEGRAM_BOT_TOKEN=<your-token> pytest tests/test_telegram_integration.py -v
 ```
 
 ## Running with Docker
@@ -101,10 +108,52 @@ required checks once GitHub has seen it run. Force-pushes and deletions of
 
 ## Deployment
 
-Merges to `main` trigger the CD workflow (`.github/workflows/cd.yml`), which
+Once CI passes on `main`, the CD workflow (`.github/workflows/cd.yml`)
 builds and scans the Docker image, pushes it to GHCR, and deploys it over
-SSH to the Terraform-provisioned host. See `docs/report.md` for the full
-CI/CD and infrastructure design, and `infra/terraform/` for the OCI setup.
+SSH to the Terraform-provisioned host. See `docs/report.tex` for the full
+CI/CD and infrastructure design.
+
+### Setting it up from scratch
+
+1. **Create a deploy SSH key** (no passphrase, CD uses it non-interactively):
+
+   ```bash
+   ssh-keygen -t ed25519 -N "" -f deploy_key
+   ```
+
+2. **Provision the host with Terraform.** You need an OCI account and an
+   API signing key (OCI console: Profile > My profile > API keys).
+
+   ```bash
+   cd infra/terraform
+   terraform init
+   terraform apply
+   ```
+
+   `apply` prompts for the required variables (OCI OCIDs, key fingerprint,
+   key path, region, and the contents of `deploy_key.pub`); their
+   descriptions are in `variables.tf`.
+
+   Cloud-init installs Docker and clones this repository into `/opt/app`,
+   so give it a few minutes after `apply` finishes.
+
+3. **Add the GitHub Actions secrets** (Settings > Secrets and variables >
+   Actions):
+
+   | Secret | Value |
+   |---|---|
+   | `DEPLOY_HOST` | `terraform output -raw server_ipv4` |
+   | `DEPLOY_USER` | `terraform output -raw deploy_user` (`ubuntu`) |
+   | `DEPLOY_SSH_KEY` | contents of `deploy_key` (the private half) |
+   | `TELEGRAM_BOT_TOKEN` | bot token from [@BotFather](https://t.me/BotFather); also used by the `integration-test` CI job |
+   | `CRYPTO_API_KEY` | optional CoinGecko key |
+   | `STOCK_API_KEY` | Alpha Vantage key |
+
+4. **Push or merge to `main`.** CI runs, and once it passes CD builds,
+   scans, and deploys the bot. The workflow's smoke test confirms the
+   container is running and the bot token is valid.
+
+`terraform destroy` in `infra/terraform/` removes everything again.
 
 **Note for graders:** the live host runs on an Oracle Cloud (OCI) trial
 account, which is time-limited (roughly 20–30 days). If the deployed bot or
@@ -118,7 +167,7 @@ a fresh OCI account.
 - Jafar — Application & Continuous Integration, including the `main` branch
   ruleset (required PR + 1 approving review + required `lint`/`test`/`docker-build`
   status checks, no force-push/delete) that turns CI into an enforced merge gate.
-  Also wrote `docs/report.md`, covering both members' work.
+  Also wrote `docs/report.tex`, covering both members' work.
 - Gabriel — Delivery, Infrastructure & Security: multi-stage non-root
   `Dockerfile` and Compose runtime, the `cd.yml` build → scan → push →
   deploy → smoke-test pipeline, the Terraform configuration provisioning

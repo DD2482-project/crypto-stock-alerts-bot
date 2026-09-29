@@ -8,7 +8,7 @@
 - [ ] `pytest` passes locally
 - [ ] Docker image builds locally (`docker build -t crypto-stock-alerts-bot:ci .`)
 - [ ] No secrets committed (tokens, keys, `.env`)
-- [ ] Docs updated if behavior, config, or infra changed (`README.md`, `docs/report.md`)
+- [ ] Docs updated if behavior, config, or infra changed (`README.md`, `docs/report.tex`)
 
 ## Test plan
 
