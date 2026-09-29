@@ -9,6 +9,20 @@ permissions:
   contents: read
 
 jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest tests/test_telegram_integration.py -v
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
   lint:
     runs-on: ubuntu-latest
     steps:
