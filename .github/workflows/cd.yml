@@ -1,29 +1,35 @@
-# Build + push to GHCR, scan the image, and deploy to the Terraform-
-# provisioned host on every merge to main.
 name: CD
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  packages: write        # push image to GHCR
-  security-events: write # upload Trivy results to the Security tab
+  packages: write
+  security-events: write
+
+env:
+  SHA: ${{ github.event.workflow_run.head_sha }}
 
 jobs:
   build-scan-push:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     outputs:
-      # Passed to the deploy job so both jobs agree on exactly one tag.
       image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
 
-      # Container registries reject tags containing uppercase characters,
-      # and this repository lives under an organisation whose name has
-      # them (DD2482-project). github.repository therefore cannot be used
-      # verbatim -- it is lowercased here once and reused everywhere.
+      # GHCR requires lowercase image names.
       - name: Compute lowercase image name
         id: meta
         run: |
@@ -40,35 +46,37 @@ jobs:
       - name: Build image
         run: |
           docker build \
-            -t "${{ steps.meta.outputs.image }}:${{ github.sha }}" \
+            -t "${{ steps.meta.outputs.image }}:${{ env.SHA }}" \
             -t "${{ steps.meta.outputs.image }}:latest" \
             .
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "${{ steps.meta.outputs.image }}:${{ github.sha }}"
+          image-ref: "${{ steps.meta.outputs.image }}:${{ env.SHA }}"
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          # Report-only for this project's scope: failing the build would
-          # be stricter, but a single unpatched base-image CVE would then
-          # block every deploy until upstream ships a fix. Documented as a
-          # trade-off in the report rather than silently ignored.
           exit-code: "0"
 
       - name: Upload Trivy results to the Security tab
         uses: github/codeql-action/upload-sarif@v3
-        # Runs even when an earlier step failed, so partial scan results
-        # are still visible -- but only when the file actually exists, so
-        # a failure here never masks the real error further up the job.
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
 
+      - name: Gate on fixable CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "${{ steps.meta.outputs.image }}:${{ env.SHA }}"
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: Push image
         run: |
-          docker push "${{ steps.meta.outputs.image }}:${{ github.sha }}"
+          docker push "${{ steps.meta.outputs.image }}:${{ env.SHA }}"
           docker push "${{ steps.meta.outputs.image }}:latest"
 
   deploy:
@@ -85,18 +93,10 @@ jobs:
             set -e
             cd /opt/app
 
-            # Force the host to exactly match main rather than pulling the
-            # branch it happens to be on -- makes the deploy reproducible
-            # regardless of what state a previous run left behind. The
-            # untracked .env written below is not touched by reset.
             git fetch origin
-            git checkout -B main origin/main
-            git reset --hard origin/main
+            git checkout -B main ${{ env.SHA }}
+            git reset --hard ${{ env.SHA }}
 
-            # GHCR packages are private by default, so the host must
-            # authenticate before it can pull. GITHUB_TOKEN is scoped to
-            # this workflow run and expires with it, so no long-lived
-            # credential is stored on the host.
             echo "${{ secrets.GITHUB_TOKEN }}" \
               | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
@@ -107,12 +107,12 @@ jobs:
             POLL_INTERVAL_SECONDS=60
             ENV
 
-            export IMAGE="${{ needs.build-scan-push.outputs.image }}:${{ github.sha }}"
+            export IMAGE="${{ needs.build-scan-push.outputs.image }}:${{ env.SHA }}"
             docker compose pull
             docker compose up -d
             docker image prune -f
 
-      - name: Smoke test — container running + bot token reachable
+      - name: Smoke test
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -121,10 +121,5 @@ jobs:
           script: |
             set -e
             cd /opt/app
-            # Fails the job if the bot container isn't Up.
             docker compose ps --status running | grep -q bot
-            # getMe confirms Telegram accepts the bot token; it can't
-            # confirm *this* deployment is polling, only that the
-            # credentials are valid -- a real /subscribe round-trip is
-            # verified manually per the project's Definition of Done.
             curl -sf "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe" > /dev/null
