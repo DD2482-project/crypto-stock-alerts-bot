@@ -43,7 +43,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - run: pytest --cov=app --cov-report=term-missing
+      - run: pytest --cov=app --cov-report=term-missing --cov-fail-under=40
 
   docker-build:
     runs-on: ubuntu-latest
