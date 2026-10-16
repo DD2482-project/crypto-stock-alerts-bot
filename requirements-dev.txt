@@ -1,6 +1,6 @@
 # Runtime deps plus lint/test tooling, for local dev and CI.
 -r requirements.txt
-pytest==8.3.3
+pytest==9.1.1
 pytest-cov==5.0.0
 pytest-asyncio==0.24.0
 requests-mock==1.12.1
